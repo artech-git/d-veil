@@ -1,13 +1,12 @@
 
 #![allow(dead_code, unused)]
 
+use std::{net::Ipv4Addr, ops::Range};
 
-use std::net::Ipv4Addr;
-
+use debug_ignore::DebugIgnore;
 use tokio::io::Result;
 
-use crate::header::DnsHeader; 
-
+use crate::{header::DnsHeader, response::DnsResponse}; 
 pub struct BytePacketBuffer {
     pub buf: [u8; 512],
     pub pos: usize,
@@ -56,21 +55,21 @@ impl BytePacketBuffer {
     }
 
     #[inline(always)]
-    pub fn get_range(&self, start: usize, len: usize) -> Result<&[u8]> { 
-        if start + len >= 512 { 
+    pub fn get_range(&self, start: usize, index_byte: usize) -> Result<&[u8]> { 
+        if start + index_byte >= 512 { 
             return Err(std::io::ErrorKind::OutOfMemory.into()); 
         }
-        let range = start .. (start + len); 
+        let range = start .. (start + index_byte); 
         Ok(&self.buf[range])
     }
 
-    pub fn set_range(&mut self, start: usize, len: usize, data: &[u8]) -> Result<()> {
+    pub fn set_range(&mut self, start: usize, index_byte: usize, data: &[u8]) -> Result<()> {
 
-        if (start + len >= 512) || (data.len() != len) { 
+        if (start + index_byte >= 512) || (data.len() != index_byte) { 
             return Err(std::io::ErrorKind::OutOfMemory.into()); 
         }
 
-        let range = start .. (start + len); 
+        let range = start .. (start + index_byte); 
 
         for pos in range { 
             self.buf[pos] = data[pos-start];
@@ -116,8 +115,11 @@ impl BytePacketBuffer {
     }
 
     // read the query_name from the bytes 
-    pub fn read_qname(&mut self, outstr: &mut String) -> Result<()> { 
+    pub fn read_qname(&mut self, outstr: &mut String) -> Result<Range<usize>> { 
         let mut pos = self.pos; 
+
+        let mut max = 0; // highhest byte
+        let mut low = 0; // lowest byte 
 
         let mut jumped = false; 
         let max_jumps = 5; 
@@ -132,16 +134,17 @@ impl BytePacketBuffer {
                 return Err(std::io::ErrorKind::OutOfMemory.into()); 
             }
 
-            let len = self.get(pos)?; 
+            let index_byte = self.get(pos)?; 
 
-            if (len & 0xC0) == 0xC0 {
+            if (index_byte & 0xC0) == 0xC0 {
                 
                 if !jumped { 
+                    max = pos; 
                     self.seek(pos + 2)?; 
                 }
 
                 let b2 = self.get(pos + 1)? as u16; 
-                let offset = ( ((len as u16) & 0xC0) << 8 ) | b2; 
+                let offset = ( ((index_byte as u16) & 0xC0) << 8 ) | b2; 
 
                 pos = offset as usize; 
                 jumped = true; 
@@ -153,18 +156,19 @@ impl BytePacketBuffer {
             else { 
                 pos += 1 ; 
 
-                if len == 0 { 
+                if index_byte == 0 { 
+                    low = pos; 
                     break; 
                 }
 
                 outstr.push_str(delim);
 
-                let str_buffer = self.get_range(pos, len as usize)?; 
+                let str_buffer = self.get_range(pos, index_byte as usize)?; 
                 outstr.push_str(&String::from_utf8_lossy(str_buffer).to_lowercase()); 
 
                 delim = "."; 
                 
-                pos += len as usize;
+                pos += index_byte as usize;
             }
 
 
@@ -174,7 +178,7 @@ impl BytePacketBuffer {
             self.seek(pos)?; 
         }
 
-        Ok(())
+        Ok(Range{start: max, end: low})
     }
 
 }
@@ -234,21 +238,23 @@ impl QueryType {
 pub struct DnsQuestion { 
     pub name: String, 
     pub qtype: QueryType,
+    pub byte_pos: Range<usize> // for indicating the position of the DnsQuestion in the bytes
 }
 
 impl DnsQuestion { 
     pub fn new(name: String, qtype: QueryType) -> Self { 
          Self { 
             name, 
-            qtype
+            qtype,
+            byte_pos: 0..0
          }
     }
 
     pub fn read(&mut self, buffer: &mut BytePacketBuffer) -> Result<()> { 
-        buffer.read_qname(&mut self.name)?;
+        let range = buffer.read_qname(&mut self.name)?;
         self.qtype = QueryType::from_num(buffer.read_u16()?);
         let _ = buffer.read_u16()?; 
-
+        self.byte_pos = range; 
         Ok(())
     }
 }
@@ -260,7 +266,7 @@ pub enum DnsRecord {
     UNKNOWN {
         domain: String,
         qtype: u16, 
-        data_len: u16, 
+        data_index_byte: u16, 
         ttl: u32
     },
     A { 
@@ -280,7 +286,7 @@ impl DnsRecord {
         let qtype = QueryType::from_num(qtype_num); 
         let _ = buffer.read_u16()?; 
         let ttl = buffer.read_u32()?; 
-        let data_len = buffer.read_u16()?;
+        let data_index_byte = buffer.read_u16()?;
 
         match qtype {
                 QueryType::A => { 
@@ -302,12 +308,12 @@ impl DnsRecord {
                 },
 
                 QueryType::UNKNOWN(_) => { 
-                    buffer.step(data_len as usize)?; 
+                    buffer.step(data_index_byte as usize)?; 
 
                     Ok(Self::UNKNOWN{ 
                         domain: domain, 
                         qtype: qtype_num, 
-                        data_len: data_len, 
+                        data_index_byte: data_index_byte, 
                         ttl: ttl 
                     })
                 }
@@ -317,7 +323,7 @@ impl DnsRecord {
 }
 
 #[derive(Clone, Debug)]
-pub struct DnsPacket { 
+pub struct DnsPacket {
     pub header: DnsHeader, 
     pub questions: Vec<DnsQuestion>, 
     pub answers: Vec<DnsRecord>, 
@@ -336,33 +342,66 @@ impl DnsPacket {
         }
     }
 
-    pub fn from_buffer(buffer: &mut BytePacketBuffer) -> Result<Self>  {
+    pub fn to_response(&self) -> Result<Vec<u8>> {
+        let mut ans = vec![]; 
+
+        let id = self.header.get_id()?;
+        let mut h = self.header.get_headers()?;
+
+        // set it as a query response QR & Enable RD flag as well
+        h[0] = h[0] ^ 0x88; 
+
+        ans.extend(id); 
+        ans.extend(h); 
+
+        // some trailling header value 
+        ans.extend(&[0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         
-        let mut result = DnsPacket::new(); 
-        result.header.read(buffer)?;
+        for i in self.questions.iter() {
 
-        for _ in 0..result.header.questions { 
-            let mut question = DnsQuestion::new("".to_string(), QueryType::UNKNOWN(0));
-            question.read(buffer)?;
-            result.questions.push(question);
-        }
+            for sub_path in i.name.split(".") {
+                println!("sub: {}", sub_path);
+                let count = sub_path.chars().count() as u8; 
+                ans.push(count); 
+                let raw_bytes = sub_path.as_bytes();
+                ans.extend_from_slice(raw_bytes); 
+            }
+            ans.push(0); 
+        } 
 
-        for _ in 0..result.header.answers { 
-            let rec = DnsRecord::read(buffer)?;
-            result.answers.push(rec); 
-        }
+        ans.extend([0_u8; 20]);
 
-        for _ in 0..result.header.authoritative_entries { 
-            let rec = DnsRecord::read(buffer)?;
-            result.authorities.push(rec);
-        }
 
-        for _ in 1..result.header.resource_entries {
-            let rec = DnsRecord::read(buffer)?;
-            result.resources.push(rec);
-        }
+        Ok(ans)
+    }
+}
 
-        Ok(result)
+pub fn from_buffer(buffer: &mut BytePacketBuffer) -> Result<DnsPacket>  {
+    
+    let mut result = DnsPacket::new(); 
+    result.header.read(buffer)?;
+
+    for _ in 0..result.header.questions { 
+        let mut question = DnsQuestion::new("".to_string(), QueryType::UNKNOWN(0));
+        question.read(buffer)?;
+        result.questions.push(question);
     }
 
+    for _ in 0..result.header.answers { 
+        let rec = DnsRecord::read(buffer)?;
+        result.answers.push(rec); 
+    }
+
+    for _ in 0..result.header.authoritative_entries { 
+        let rec = DnsRecord::read(buffer)?;
+        result.authorities.push(rec);
+    }
+
+    for _ in 1..result.header.resource_entries {
+        let rec = DnsRecord::read(buffer)?;
+        result.resources.push(rec);
+    }
+
+    Ok(result)
 }
+

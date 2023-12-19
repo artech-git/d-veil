@@ -3,12 +3,12 @@
 use std::sync::Arc;
 use tokio::net::UdpSocket; 
 
-use crate::{packet::BytePacketBuffer, header::DnsHeader};
+use crate::{packet::{BytePacketBuffer, DnsPacket}, header::DnsHeader};
 
 
 mod header;
 mod packet;
-
+mod response; 
 
 #[tokio::main]
 async fn main() {
@@ -32,20 +32,12 @@ async fn main() {
                 
                 let _handle = tokio::task::spawn(async move { 
 
-                    let mut packet = BytePacketBuffer::new(buf); 
-                    let mut headers = DnsHeader::new(); 
+                    let mut packet_buffer = BytePacketBuffer::new(buf); 
                     
-                    let response = match headers.read(&mut packet) {
-                        Ok(_) => {
-                            let mut h = headers.get_headers().unwrap();
-                            let id = headers.get_id().unwrap();
-
-                            h[0] = h[0] ^ 0x80;
-
-                            let mut ans = vec![]; 
-                            ans.extend(id); 
-                            ans.extend(h); 
-                            ans.extend([0_u8; 508]);
+                    let response = match packet::from_buffer(&mut packet_buffer) {
+                        Ok(dns_packet) => {
+                            
+                            let ans = dns_packet.to_response().unwrap(); 
 
                             Ok(ans)
                         },
