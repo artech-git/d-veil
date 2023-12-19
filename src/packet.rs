@@ -2,8 +2,6 @@
 #![allow(dead_code, unused)]
 
 use std::{net::Ipv4Addr, ops::Range};
-
-use debug_ignore::DebugIgnore;
 use tokio::io::Result;
 
 use crate::{header::DnsHeader, response::DnsResponse}; 
