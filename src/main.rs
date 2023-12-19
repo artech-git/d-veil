@@ -37,8 +37,10 @@ async fn main() {
                     
                     let response = match headers.read(&mut packet) {
                         Ok(_) => {
-                            let h = headers.get_headers().unwrap();
+                            let mut h = headers.get_headers().unwrap();
                             let id = headers.get_id().unwrap();
+
+                            h[0] = h[0] ^ 0x80;
 
                             let mut ans = vec![]; 
                             ans.extend(id); 
