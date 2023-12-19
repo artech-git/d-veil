@@ -66,12 +66,12 @@ impl DnsHeader {
     }
 
     pub fn get_headers(&self) -> Result<[u8; 2]> {
-        let mut resp = self.header.to_be_bytes();
+        let resp = self.header.to_be_bytes();
         
         Ok(resp)
     }
     pub fn get_id(&self) -> Result<[u8; 2]> { 
-        let mut resp = self.id.to_be_bytes(); 
+        let resp = self.id.to_be_bytes(); 
         Ok(resp)
     }
 
