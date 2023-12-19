@@ -8,7 +8,7 @@ use crate::packet::{ResultCode, BytePacketBuffer};
 pub struct DnsHeader {
     pub id: u16, // 16 bits 
 
-    pub header: u16, // 16 bits seprate header space
+    // pub header: u16, // 16 bits seprate header space
     pub recursion_desired: bool,    // 1 bit
     pub truncated_message: bool,    // 1 bit
     pub authoritative_answer: bool, // 1 bit
@@ -43,7 +43,7 @@ impl DnsHeader {
         let a = (flags >> 8) as u8; 
         let b = (flags & 0xFF) as u8; 
 
-        self.header = flags; 
+        // self.header = flags; 
 
         self.recursion_desired = (a & ( 1 << 0 )) > 0; 
         self.truncated_message = (a & ( 1 << 1 )) > 0;
@@ -65,11 +65,38 @@ impl DnsHeader {
         Ok(())
     }
 
-    pub fn get_headers(&self) -> Result<[u8; 2]> {
-        let resp = self.header.to_be_bytes();
+    pub fn write(&self, buffer: &mut BytePacketBuffer) -> Result<()>{ 
+        buffer.write_u16(self.id)?;
+
+        let h1 = ((self.recursion_desired as u8) << 0
+            | ((self.truncated_message as u8) << 1)
+            | ((self.authoritative_answer as u8) << 2)
+            | ((self.opcode as u8) << 3)
+            | ((self.response as u8) << 7)) as u8; 
+
+        buffer.write_u8(h1)?;
+
+        let h2 = ((self.rescode as u8)
+            | ((self.checking_disabled as u8) << 4)
+            | ((self.authed_data as u8) << 5)
+            | ((self.z as u8) << 6)
+            | ((self.recursion_available as u8) << 7)) as u8;
+
+        buffer.write_u8(h2)?;
+
+        buffer.write_u16(self.questions)?;
+        buffer.write_u16(self.answers)?;
+        buffer.write_u16(self.authoritative_entries)?;
+        buffer.write_u16(self.resource_entries)?;
         
-        Ok(resp)
+        Ok(())
     }
+
+    // pub fn get_headers(&self) -> Result<[u8; 2]> {
+    //     let resp = self.header.to_be_bytes();
+        
+    //     Ok(resp)
+    // }
     pub fn get_id(&self) -> Result<[u8; 2]> { 
         let resp = self.id.to_be_bytes(); 
         Ok(resp)

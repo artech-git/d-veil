@@ -179,8 +179,65 @@ impl BytePacketBuffer {
         Ok(Range{start: max, end: low})
     }
 
+    pub fn write_qname(&mut self, qname: &str) -> Result<()> { 
+
+        for label in qname.split('.') { 
+
+            let len = label.chars().count();
+
+            if len > 0x3f { 
+                return Err(std::io::ErrorKind::OutOfMemory.into()); 
+            }
+            if label.chars().any(|c| !c.is_ascii()) {
+                return Err(std::io::ErrorKind::InvalidData.into());
+            }
+
+            self.write_u8(len as u8)?;
+
+            for b in label.as_bytes() {
+                self.write_u8(*b)?;
+            }
+
+        }
+
+        self.write_u8(0)?;
+        
+        Ok(())
+    }
 }
 
+
+impl BytePacketBuffer { 
+    pub fn write(&mut self, val: u8) -> Result<()> {
+        if self.pos >= 512 { 
+            return Err(std::io::ErrorKind::OutOfMemory.into()); 
+        }
+
+        self.buf[self.pos] = val; 
+        self.pos += 1; 
+        Ok(())
+    }
+
+    pub fn write_u8(&mut self, val: u8) -> Result<()> { 
+        self.write(val)?;
+        Ok(())
+    }
+
+    pub fn write_u16(&mut self, val: u16) -> Result<()> { 
+        self.write((val >> 8) as u8)?;
+        self.write((val & 0xFF) as u8)?;
+        Ok(()) 
+    }
+
+    pub fn write_u32(&mut self, val: u32) -> Result<()> { 
+        self.write(((val >> 24 ) & 0xFF) as u8)?; 
+        self.write(((val >> 16 ) & 0xFF) as u8)?; 
+        self.write(((val >> 8 ) & 0xFF) as u8)?; 
+        self.write(((val >> 0 ) & 0xFF) as u8)?; 
+
+        Ok(())
+    }
+}
 
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
@@ -236,7 +293,7 @@ impl QueryType {
 pub struct DnsQuestion { 
     pub name: String, 
     pub qtype: QueryType,
-    pub byte_pos: Range<usize> // for indicating the position of the DnsQuestion in the bytes
+    // pub byte_pos: Range<usize> // for indicating the position of the DnsQuestion in the bytes
 }
 
 impl DnsQuestion { 
@@ -244,7 +301,7 @@ impl DnsQuestion {
          Self { 
             name, 
             qtype,
-            byte_pos: 0..0
+            // byte_pos: 0..0
          }
     }
 
@@ -252,7 +309,16 @@ impl DnsQuestion {
         let range = buffer.read_qname(&mut self.name)?;
         self.qtype = QueryType::from_num(buffer.read_u16()?);
         let _ = buffer.read_u16()?; 
-        self.byte_pos = range; 
+        // self.byte_pos = range; 
+        Ok(())
+    }
+
+    pub fn write(&self, buffer: &mut BytePacketBuffer) -> Result<()> {
+        buffer.write_qname(&self.name)?;
+        let typenum = self.qtype.to_num(); 
+
+        buffer.write_u16(typenum)?;
+        buffer.write_u16(1)?;
         Ok(())
     }
 }
@@ -318,6 +384,30 @@ impl DnsRecord {
         }
 
     }
+    pub fn write(&self, buffer: &mut BytePacketBuffer) -> Result<usize> { 
+        let start_pos = buffer.pos(); 
+        match self { 
+            DnsRecord::A { domain, addr, ttl } => { 
+                buffer.write_qname(&domain)?;
+                buffer.write_u16(QueryType::A.to_num())?;
+                buffer.write_u16(1)?;
+                buffer.write_u32(*ttl)?;
+                buffer.write_u16(4)?;
+
+                let octects = addr.octets(); 
+                buffer.write_u8(octects[0])?;
+                buffer.write_u8(octects[1])?;
+                buffer.write_u8(octects[2])?;
+                buffer.write_u8(octects[3])?;
+            }
+
+            DnsRecord::UNKNOWN { .. } => { 
+                println!("Skipping record field: {:?}", self); 
+            }
+        }
+
+        Ok(buffer.pos() - start_pos)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -340,37 +430,66 @@ impl DnsPacket {
         }
     }
 
-    pub fn to_response(&self) -> Result<Vec<u8>> {
-        let mut ans = vec![]; 
+    // pub fn to_response(&self) -> Result<Vec<u8>> {
+    //     let mut ans = vec![]; 
 
-        let id = self.header.get_id()?;
-        let mut h = self.header.get_headers()?;
+    //     let id = self.header.get_id()?;
+    //     // let id = 1234_u16.to_be_bytes(); 
+    //     let mut h = self.header.get_headers()?;
 
-        // set it as a query response QR & Enable RD flag as well
-        h[0] = h[0] ^ 0x88; 
+    //     // set it as a query response QR & Enable RD flag as well
+    //     h[0] = h[0] ^ 0x80; 
 
-        ans.extend(id); 
-        ans.extend(h); 
+    //     ans.extend(id); 
+    //     ans.extend(h); 
 
-        // some trailling header value 
-        ans.extend(&[0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    //     // some trailling header value 
+    //     ans.extend(&[0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         
-        for i in self.questions.iter() {
+    //     for i in self.questions.iter() {
 
-            for sub_path in i.name.split(".") {
-                println!("sub: {}", sub_path);
-                let count = sub_path.chars().count() as u8; 
-                ans.push(count); 
-                let raw_bytes = sub_path.as_bytes();
-                ans.extend_from_slice(raw_bytes); 
-            }
-            ans.push(0); 
-        } 
+    //         for sub_path in i.name.split(".") {
+    //             println!("sub: {}", sub_path);
+    //             let count = sub_path.chars().count() as u8; 
+    //             ans.push(count); 
+    //             let raw_bytes = sub_path.as_bytes();
+    //             ans.extend_from_slice(raw_bytes); 
+    //         }
+    //         // ans.push(0); 
+    //     } 
 
-        ans.extend([0_u8; 20]);
+    //     // ans.extend([0_u8; 20]);
 
 
-        Ok(ans)
+    //     Ok(ans)
+    // }
+
+    pub fn write(&mut self, buffer: &mut BytePacketBuffer) -> Result<()> {
+        
+        self.header.questions = self.questions.len() as u16; 
+        self.header.answers = self.answers.len() as u16; 
+        self.header.authoritative_entries = self.authorities.len() as u16; 
+        self.header.resource_entries = self.resources.len() as u16; 
+
+        self.header.write(buffer)?;
+
+        for question in &self.questions { 
+            question.write(buffer)?;
+        }
+
+        for rec in &self.answers { 
+            rec.write(buffer)?;
+        }
+
+        for rec in &self.authorities {
+            rec.write(buffer)?;
+        }
+
+        for rec in &self.resources { 
+            rec.write(buffer)?;
+        }
+
+        Ok(())
     }
 }
 

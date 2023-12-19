@@ -3,12 +3,21 @@
 use std::sync::Arc;
 use tokio::net::UdpSocket; 
 
-use crate::{packet::{BytePacketBuffer, DnsPacket}, header::DnsHeader};
+use crate::packet::BytePacketBuffer;
 
 
 mod header;
 mod packet;
 mod response; 
+
+
+
+// async fn resolver(server: SocketAddr,bytes: &mut BytePacketBuffer,  ) -> Result<()> { 
+//     let socket = UdpSocket::bind(("0.0.0.0", 43210)).await?;
+
+
+// }
+
 
 #[tokio::main]
 async fn main() {
@@ -34,12 +43,23 @@ async fn main() {
 
                     let mut packet_buffer = BytePacketBuffer::new(buf); 
                     
-                    let response = match packet::from_buffer(&mut packet_buffer) {
-                        Ok(dns_packet) => {
-                            
-                            let ans = dns_packet.to_response().unwrap(); 
+                    let _response = match packet::from_buffer(&mut packet_buffer) {
+                        Ok(mut dns_packet) => {
+                            let mut _local_buffer = [0_u8; 512]; 
 
-                            Ok(ans)
+                            dns_packet.header.response = true; 
+                            dns_packet.header.recursion_desired = false; 
+
+
+                            println!("DNS req: {:#?} \n", dns_packet);
+
+                            let mut buffer = BytePacketBuffer::new(_local_buffer); 
+
+                            // println!("DNS res: {:#?}", buffer); 
+
+                            let _ = dns_packet.write(&mut buffer);
+
+                            Ok(buffer)
                         },
                         Err(_e) => {Err(_e)}
                     }.unwrap(); 
@@ -50,7 +70,7 @@ async fn main() {
                     // println!("data: {:?}", _received_data); 
 
                     cloned_udp_socket
-                        .send_to(&response, socket)
+                        .send_to(&_response.buf, socket)
                         .await
                         .expect("Failed to send the response");
                 });

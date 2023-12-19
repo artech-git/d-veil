@@ -1,4 +1,4 @@
-
+#![allow(dead_code)]
 
 
 
@@ -10,7 +10,7 @@ pub struct DnsResponse {
 }
 
 impl std::convert::From<DnsResponse> for Vec<u8> {
-    fn from(value: DnsResponse) -> Self {
+    fn from(_value: DnsResponse) -> Self {
         vec![]
     }
 }
