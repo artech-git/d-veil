@@ -43,8 +43,6 @@ impl DnsHeader {
         let a = (flags >> 8) as u8; 
         let b = (flags & 0xFF) as u8; 
 
-        // self.header = flags; 
-
         self.recursion_desired = (a & ( 1 << 0 )) > 0; 
         self.truncated_message = (a & ( 1 << 1 )) > 0;
         self.authoritative_answer = (a & ( 1 << 2 )) > 0; 
@@ -76,7 +74,12 @@ impl DnsHeader {
 
         buffer.write_u8(h1)?;
 
-        let h2 = ((self.rescode as u8)
+        let mut rcode = 0;
+        if self.opcode != 0 {
+            rcode = 4;
+        }
+
+        let h2 = ((rcode as u8)
             | ((self.checking_disabled as u8) << 4)
             | ((self.authed_data as u8) << 5)
             | ((self.z as u8) << 6)

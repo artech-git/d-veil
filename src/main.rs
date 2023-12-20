@@ -48,7 +48,6 @@ async fn main() {
                             let mut _local_buffer = [0_u8; 512]; 
 
                             dns_packet.header.response = true; 
-                            dns_packet.header.recursion_desired = false; 
 
                             let ans_record = packet::DnsRecord::A{ 
                                     domain: "codecrafters.io".to_string(), 
