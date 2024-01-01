@@ -4,11 +4,11 @@ use tokio::io::Result;
 
 use crate::packet::{ResultCode, BytePacketBuffer};
 
+
 #[derive(Clone, Debug, Default)]
 pub struct DnsHeader {
     pub id: u16, // 16 bits 
 
-    // pub header: u16, // 16 bits seprate header space
     pub recursion_desired: bool,    // 1 bit
     pub truncated_message: bool,    // 1 bit
     pub authoritative_answer: bool, // 1 bit
@@ -49,7 +49,11 @@ impl DnsHeader {
         self.opcode = (a >> 3 ) & 0x0F;
         self.response = (a & (1 << 7)) > 0; 
 
-        self.rescode = ResultCode::from_num(b & 0x0F); 
+        // if self.opcode != 0  {
+        //     self.rescode = ResultCode::from_num(4); 
+        // }
+        self.rescode = ResultCode::from_num(4);
+
         self.checking_disabled = ( b & ( 1 << 4)) > 0; 
         self.authed_data = (b & ( 1 << 5 )) > 0; 
         self.z = (b & ( 1 << 6 )) > 0; 
@@ -74,12 +78,7 @@ impl DnsHeader {
 
         buffer.write_u8(h1)?;
 
-        let mut rcode = 0;
-        if self.opcode != 0 {
-            rcode = 4;
-        }
-
-        let h2 = ((rcode as u8)
+        let h2 = ((self.rescode as u8)
             | ((self.checking_disabled as u8) << 4)
             | ((self.authed_data as u8) << 5)
             | ((self.z as u8) << 6)

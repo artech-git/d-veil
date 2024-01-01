@@ -11,14 +11,6 @@ mod packet;
 mod response; 
 
 
-
-// async fn resolver(server: SocketAddr,bytes: &mut BytePacketBuffer,  ) -> Result<()> { 
-//     let socket = UdpSocket::bind(("0.0.0.0", 43210)).await?;
-
-
-// }
-
-
 #[tokio::main]
 async fn main() {
 
