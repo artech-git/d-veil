@@ -33,6 +33,8 @@ async fn main() {
                 
                 let _handle = tokio::task::spawn(async move { 
 
+                    println!("Buf: {:x?}", buf);
+
                     let mut packet_buffer = BytePacketBuffer::new(buf); 
                     
                     let _response = match packet::from_buffer(&mut packet_buffer) {

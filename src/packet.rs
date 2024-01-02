@@ -113,11 +113,11 @@ impl BytePacketBuffer {
     }
 
     // read the query_name from the bytes 
-    pub fn read_qname(&mut self, outstr: &mut String) -> Result<Range<usize>> { 
+    pub fn read_qname(&mut self, outstr: &mut String) -> Result<()> { 
         let mut pos = self.pos; 
 
-        let mut max = 0; // highhest byte
-        let mut low = 0; // lowest byte 
+        // let mut max = 0; // highhest byte
+        // let mut low = 0; // lowest byte 
 
         let mut jumped = false; 
         let max_jumps = 5; 
@@ -137,7 +137,7 @@ impl BytePacketBuffer {
             if (index_byte & 0xC0) == 0xC0 {
                 
                 if !jumped { 
-                    max = pos; 
+                    // max = pos; 
                     self.seek(pos + 2)?; 
                 }
 
@@ -155,7 +155,7 @@ impl BytePacketBuffer {
                 pos += 1 ; 
 
                 if index_byte == 0 { 
-                    low = pos; 
+                    // low = pos; 
                     break; 
                 }
 
@@ -176,7 +176,7 @@ impl BytePacketBuffer {
             self.seek(pos)?; 
         }
 
-        Ok(Range{start: max, end: low})
+        Ok(())
     }
 
     pub fn write_qname(&mut self, qname: &str) -> Result<()> { 
@@ -304,9 +304,14 @@ impl DnsQuestion {
     }
 
     pub fn read(&mut self, buffer: &mut BytePacketBuffer) -> Result<()> { 
+        println!("   question section entered: ");
         let range = buffer.read_qname(&mut self.name)?;
+
+        println!("   question section name: {}", self.name);
         self.qtype = QueryType::from_num(buffer.read_u16()?);
+        println!("   question query_type: {:?}", self.qtype);
         let _ = buffer.read_u16()?; 
+        println!("   question took 16 bits forwards");
         Ok(())
     }
 
@@ -461,27 +466,33 @@ pub fn from_buffer(buffer: &mut BytePacketBuffer) -> Result<DnsPacket>  {
     let mut result = DnsPacket::new(); 
     result.header.read(buffer)?;
 
+    println!("parsed headers");
     for _ in 0..result.header.questions { 
-        let mut question = DnsQuestion::new("".to_string(), QueryType::UNKNOWN(0));
+        let mut question = DnsQuestion::new("".to_string(), QueryType::A);
         question.read(buffer)?;
+        println!(" question: ");
         result.questions.push(question);
     }
-
+    
+    println!("parsed questions");
     for _ in 0..result.header.answers {
         let rec = DnsRecord::read(buffer)?;
         result.answers.push(rec);
     }
-
+    
+    println!("parsed answers");
     for _ in 0..result.header.authoritative_entries { 
         let rec = DnsRecord::read(buffer)?;
         result.authorities.push(rec);
     }
-
+    
+    println!("parsed resource entries");
     for _ in 1..result.header.resource_entries {
         let rec = DnsRecord::read(buffer)?;
         result.resources.push(rec);
     }
-
+    
+    println!("parsed result");
     Ok(result)
 }
 
