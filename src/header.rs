@@ -94,11 +94,6 @@ impl DnsHeader {
         Ok(())
     }
 
-    // pub fn get_headers(&self) -> Result<[u8; 2]> {
-    //     let resp = self.header.to_be_bytes();
-        
-    //     Ok(resp)
-    // }
     pub fn get_id(&self) -> Result<[u8; 2]> { 
         let resp = self.id.to_be_bytes(); 
         Ok(resp)

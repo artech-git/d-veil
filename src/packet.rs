@@ -254,11 +254,11 @@ pub enum ResultCode {
 impl ResultCode {
     pub fn from_num(num: u8) -> ResultCode {
         match num {
-            // 1 => ResultCode::FORMERR,
-            // 2 => ResultCode::SERVFAIL,
-            // 3 => ResultCode::NXDOMAIN,
+            1 => ResultCode::FORMERR,
+            2 => ResultCode::SERVFAIL,
+            3 => ResultCode::NXDOMAIN,
             4 => ResultCode::NOTIMP,
-            // 5 => ResultCode::REFUSED,
+            5 => ResultCode::REFUSED,
             0 | _ => ResultCode::NOERROR,
         }
     }
@@ -293,7 +293,6 @@ impl QueryType {
 pub struct DnsQuestion { 
     pub name: String, 
     pub qtype: QueryType,
-    // pub byte_pos: Range<usize> // for indicating the position of the DnsQuestion in the bytes
 }
 
 impl DnsQuestion { 
@@ -301,7 +300,6 @@ impl DnsQuestion {
          Self { 
             name, 
             qtype,
-            // byte_pos: 0..0
          }
     }
 
@@ -309,7 +307,6 @@ impl DnsQuestion {
         let range = buffer.read_qname(&mut self.name)?;
         self.qtype = QueryType::from_num(buffer.read_u16()?);
         let _ = buffer.read_u16()?; 
-        // self.byte_pos = range; 
         Ok(())
     }
 
@@ -430,40 +427,6 @@ impl DnsPacket {
         }
     }
 
-    // pub fn to_response(&self) -> Result<Vec<u8>> {
-    //     let mut ans = vec![]; 
-
-    //     let id = self.header.get_id()?;
-    //     // let id = 1234_u16.to_be_bytes(); 
-    //     let mut h = self.header.get_headers()?;
-
-    //     // set it as a query response QR & Enable RD flag as well
-    //     h[0] = h[0] ^ 0x80; 
-
-    //     ans.extend(id); 
-    //     ans.extend(h); 
-
-    //     // some trailling header value 
-    //     ans.extend(&[0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        
-    //     for i in self.questions.iter() {
-
-    //         for sub_path in i.name.split(".") {
-    //             println!("sub: {}", sub_path);
-    //             let count = sub_path.chars().count() as u8; 
-    //             ans.push(count); 
-    //             let raw_bytes = sub_path.as_bytes();
-    //             ans.extend_from_slice(raw_bytes); 
-    //         }
-    //         // ans.push(0); 
-    //     } 
-
-    //     // ans.extend([0_u8; 20]);
-
-
-    //     Ok(ans)
-    // }
-
     pub fn write(&mut self, buffer: &mut BytePacketBuffer) -> Result<()> {
         
         self.header.questions = self.questions.len() as u16; 
@@ -504,9 +467,9 @@ pub fn from_buffer(buffer: &mut BytePacketBuffer) -> Result<DnsPacket>  {
         result.questions.push(question);
     }
 
-    for _ in 0..result.header.answers { 
+    for _ in 0..result.header.answers {
         let rec = DnsRecord::read(buffer)?;
-        result.answers.push(rec); 
+        result.answers.push(rec);
     }
 
     for _ in 0..result.header.authoritative_entries { 
@@ -522,3 +485,22 @@ pub fn from_buffer(buffer: &mut BytePacketBuffer) -> Result<DnsPacket>  {
     Ok(result)
 }
 
+pub fn manipulate_buffer_packet(dns_packet: &mut DnsPacket) -> Result<()> { 
+
+    dns_packet.header.response = true;
+
+    // let mut ans_records = vec![];
+
+    for query_packet in dns_packet.questions.iter_mut() {
+
+        let update_response_packet = DnsRecord::A{ 
+            domain: query_packet.name.clone(), 
+            addr: [8,8,8,8].into(), 
+            ttl: 60
+        };
+
+        dns_packet.answers.push(update_response_packet);
+    }
+
+    Ok(())
+}

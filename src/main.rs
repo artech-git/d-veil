@@ -39,16 +39,12 @@ async fn main() {
                         Ok(mut dns_packet) => {
                             let mut _local_buffer = [0_u8; 512]; 
 
-                            dns_packet.header.response = true; 
+                            // dns_packet.header.response = true; 
 
-                            let ans_record = packet::DnsRecord::A{ 
-                                    domain: "codecrafters.io".to_string(), 
-                                    addr: [8,8,8,8].into(), 
-                                    ttl: 60
-                                };
+                            // dns_packet.answers.push(ans_record);
+                            // println!("DNS req: {:#?} \n", dns_packet);
 
-                            dns_packet.answers.push(ans_record);
-                            println!("DNS req: {:#?} \n", dns_packet);
+                            let _ = packet::manipulate_buffer_packet(&mut dns_packet);
 
                             let mut buffer = BytePacketBuffer::new(_local_buffer); 
 
